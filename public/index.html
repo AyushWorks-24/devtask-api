@@ -1,0 +1,243 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DevTask | Task Manager</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,Arial,sans-serif;background:#f5f6fa;color:#202435}
+.layout{display:flex;min-height:100vh}
+aside{width:225px;background:#171b2e;color:white;padding:28px 20px}
+.logo{font-size:24px;font-weight:800;margin-bottom:45px}
+.logo span{color:#8b83ff}
+.nav{color:#aeb2c5;font-size:13px;margin-bottom:12px}
+.nav.active{background:#302e50;color:white;padding:13px;border-radius:9px}
+main{flex:1;padding:35px 5%;max-width:1400px;margin:auto}
+.top{display:flex;justify-content:space-between;align-items:center;gap:15px;margin-bottom:30px}
+h1{font-size:27px;margin-bottom:7px}
+.sub{color:#85899a;font-size:14px}
+button{border:0;border-radius:8px;padding:11px 17px;cursor:pointer;font-weight:600}
+.primary{background:#7165e8;color:white}
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:28px}
+.card{background:white;padding:20px;border-radius:13px;border:1px solid #ececf2}
+.card p{color:#85899a;font-size:13px;margin-bottom:12px}
+.card h2{font-size:27px}
+.toolbar{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+input,select,textarea{border:1px solid #e0e1e9;padding:12px;border-radius:8px;font:inherit;background:white;min-width:0}
+#search{flex:1;min-width:180px}
+.tasks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}
+.task{background:white;padding:20px;border:1px solid #ececf2;border-radius:12px}
+.task h3{font-size:16px;margin-bottom:9px}
+.task p{font-size:13px;color:#85899a;margin-bottom:15px;line-height:1.5}
+.meta{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.tag{font-size:11px;padding:6px 9px;border-radius:20px;background:#f0efff;color:#6558d5}
+.task-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.task-actions select{padding:8px;font-size:12px}
+.delete{background:#fff0f0;color:#d94d4d;padding:9px 12px}
+.empty{grid-column:1/-1;text-align:center;padding:50px;color:#85899a;background:white;border-radius:12px}
+dialog{border:0;border-radius:15px;padding:25px;width:min(440px,92%);margin:auto;box-shadow:0 15px 60px #0003}
+dialog::backdrop{background:#171b2e99}
+dialog h2{margin-bottom:18px}
+form{display:grid;gap:12px}
+form input,form select,form textarea{width:100%}
+.form-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:8px}
+.secondary{background:#eeeef4;color:#444}
+@media(max-width:800px){aside{width:75px;padding:22px 12px}.logo{font-size:16px}.nav{font-size:0}.nav.active{font-size:12px;padding:10px 5px;text-align:center}.cards{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:550px){main{padding:22px 14px}.tasks{grid-template-columns:1fr}.top{align-items:flex-start}.top h1{font-size:22px}.top button{padding:10px;font-size:12px}}
+</style>
+</head>
+<body>
+<div class="layout">
+<aside>
+  <div class="logo">Dev<span>Task.</span></div>
+  <div class="nav active">▦ &nbsp; Dashboard</div>
+  <div class="nav">TASK MANAGEMENT</div>
+</aside>
+<main>
+  <div class="top">
+    <div><h1>My Dashboard</h1><p class="sub">Manage your work. Stay productive.</p></div>
+    <button class="primary" onclick="openForm()">+ Add New Task</button>
+  </div>
+  <section class="cards">
+    <div class="card"><p>Total Tasks</p><h2 id="total">0</h2></div>
+    <div class="card"><p>To Do</p><h2 id="todo">0</h2></div>
+    <div class="card"><p>In Progress</p><h2 id="progress">0</h2></div>
+    <div class="card"><p>Completed</p><h2 id="completed">0</h2></div>
+  </section>
+  <div class="toolbar">
+    <input id="search" placeholder="Search tasks..." oninput="render()">
+    <select id="filter" onchange="render()">
+      <option value="">All Statuses</option>
+      <option>Todo</option><option>In Progress</option><option>Completed</option>
+    </select>
+    <select id="priorityFilter" onchange="render()">
+      <option value="">All Priorities</option>
+      <option>Low</option><option>Medium</option><option>High</option>
+    </select>
+  </div>
+  <section id="tasks" class="tasks">
+    <div class="empty">Loading tasks...</div>
+  </section>
+</main>
+</div>
+
+<dialog id="taskDialog">
+  <h2 id="dialogTitle">Create a Task</h2>
+  <form id="taskForm">
+    <input id="title" placeholder="Task title" maxlength="100" required>
+    <textarea id="description" placeholder="Description" rows="3"></textarea>
+    <select id="status">
+      <option>Todo</option><option>In Progress</option><option>Completed</option>
+    </select>
+    <select id="priority">
+      <option>Low</option><option selected>Medium</option><option>High</option>
+    </select>
+    <input id="dueDate" type="date">
+    <div class="form-actions">
+      <button type="button" class="secondary" onclick="taskDialog.close()">Cancel</button>
+      <button class="primary" type="submit">Save Task</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const API = "/api/tasks";
+let tasks = [];
+let editingId = null;
+
+async function request(url, options = {}) {
+  const response = await fetch(url, options);
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message || "Request failed");
+  return result;
+}
+
+async function loadTasks() {
+  try {
+    const result = await request(API);
+    tasks = result.data;
+    render();
+  } catch (error) {
+    document.getElementById("tasks").innerHTML =
+      `<div class="empty">Could not load tasks: ${error.message}</div>`;
+  }
+}
+
+function render() {
+  const query = document.getElementById("search").value.toLowerCase();
+  const status = document.getElementById("filter").value;
+  const priority = document.getElementById("priorityFilter").value;
+
+  document.getElementById("total").textContent = tasks.length;
+  document.getElementById("todo").textContent = tasks.filter(t => t.status === "Todo").length;
+  document.getElementById("progress").textContent = tasks.filter(t => t.status === "In Progress").length;
+  document.getElementById("completed").textContent = tasks.filter(t => t.status === "Completed").length;
+
+  const filtered = tasks.filter(t =>
+    t.title.toLowerCase().includes(query) &&
+    (!status || t.status === status) &&
+    (!priority || t.priority === priority)
+  );
+
+  const container = document.getElementById("tasks");
+  if (!filtered.length) {
+    container.innerHTML = '<div class="empty">No tasks found. Add your first task!</div>';
+    return;
+  }
+
+  container.innerHTML = filtered.map(t => `
+    <article class="task">
+      <h3>${escapeHTML(t.title)}</h3>
+      <p>${escapeHTML(t.description || "No description provided")}</p>
+      <div class="meta">
+        <span class="tag">${escapeHTML(t.status)}</span>
+        <span class="tag">${escapeHTML(t.priority)} Priority</span>
+        ${t.dueDate ? `<span class="tag">${new Date(t.dueDate).toLocaleDateString()}</span>` : ""}
+      </div>
+      <div class="task-actions">
+        <select aria-label="Change status" onchange="changeStatus('${t._id}',this.value)">
+          ${["Todo","In Progress","Completed"].map(s =>
+            `<option ${t.status === s ? "selected" : ""}>${s}</option>`).join("")}
+        </select>
+        <button class="secondary" onclick="editTask('${t._id}')">Edit</button>
+        <button class="delete" onclick="deleteTask('${t._id}')">Delete</button>
+      </div>
+    </article>
+  `).join("");
+}
+
+function escapeHTML(value) {
+  return String(value).replace(/[&<>"']/g, c => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  }[c]));
+}
+
+function openForm() {
+  editingId = null;
+  document.getElementById("dialogTitle").textContent = "Create a Task";
+  document.getElementById("taskForm").reset();
+  taskDialog.showModal();
+}
+
+function editTask(id) {
+  const t = tasks.find(item => item._id === id);
+  if (!t) return;
+  editingId = id;
+  document.getElementById("dialogTitle").textContent = "Edit Task";
+  title.value = t.title;
+  description.value = t.description || "";
+  status.value = t.status;
+  priority.value = t.priority;
+  dueDate.value = t.dueDate ? t.dueDate.slice(0,10) : "";
+  taskDialog.showModal();
+}
+
+document.getElementById("taskForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const data = {
+    title: document.getElementById("title").value,
+    description: document.getElementById("description").value,
+    status: document.getElementById("status").value,
+    priority: document.getElementById("priority").value
+  };
+  const date = document.getElementById("dueDate").value;
+  if (date) data.dueDate = date;
+
+  try {
+    await request(editingId ? `${API}/${editingId}` : API, {
+      method: editingId ? "PATCH" : "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(data)
+    });
+    taskDialog.close();
+    await loadTasks();
+  } catch (error) {
+    alert(error.message);
+  }
+});
+
+async function changeStatus(id, value) {
+  try {
+    await request(`${API}/${id}`, {
+      method:"PATCH",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({status:value})
+    });
+    await loadTasks();
+  } catch(error) { alert(error.message); }
+}
+
+async function deleteTask(id) {
+  if (!confirm("Delete this task?")) return;
+  try {
+    await request(`${API}/${id}`, {method:"DELETE"});
+    await loadTasks();
+  } catch(error) { alert(error.message); }
+}
+
+loadTasks();
+</script>
+</body>
+</html>
